@@ -10,11 +10,13 @@ import numpy as np
 from sklearn import preprocessing
 import os
 import tensorflow as tf
-from keras import utils as np_utils
+from tensorflow.keras import utils as np_utils
 import matplotlib.pyplot as plt
 import math
-from keras.callbacks import LearningRateScheduler
-from keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.callbacks import LearningRateScheduler, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.metrics import categorical_accuracy, top_k_categorical_accuracy
+
 
 def trainModel(model, X_train, Y_train, X_test, Y_test, batch_size=32, number_epochs=51, validation_split = 0.2, loss = 'sparse_categorical_crossentropy'):
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.00001, beta_1=0.9, beta_2=0.999, amsgrad=False)
@@ -109,113 +111,95 @@ def normalizeIndicators(stock):
             #         print("Watch out, Normalization out of bounds")
     return (stock_std)
 
-def safeModel(model, safe_model_path, number_epochs, batch_size, model_name=None):
+def safeModel(model, safe_model_path, number_epochs, batch_size, history, model_name=None):
     """Saving keras model
-    Safes previous trained model
+    Safes previous trained model and training history
     Input safe_model_path: path to safe model 
     Input number_epochs: number of epochs model was trained with
     Input batch_size: batch size model was trained with
+    Input history: training history
     Input model_name: defined model name(string), default value is none and a number is chosen
     """
     if model_name == None:
         model_name = len(os.listdir(safe_model_path)) + 1
     model.save('{}{}_{}_{}.h5'.format(safe_model_path, model_name, number_epochs, batch_size))
     print('safed model to {}{}_{}_{}.h5'.format(safe_model_path, model_name, number_epochs, batch_size))
+    hist_df = pd.DataFrame(history.history)
+    hist_csv_file = '{}{}_{}_{}_history.csv'.format(safe_model_path, model_name, number_epochs, batch_size)
+    with open(hist_csv_file, mode='w') as f:
+        hist_df.to_csv(f)
+        
+def checkpointModel(checkpoint_path, model_name=None):
+    """Saving keras model checkpoints while fitting
+    Input checkpoint_path: path to checkpoints 
+    Return : safing checkpoint
+    """
+    if model_name == None:
+        model_name = len(os.listdir(checkpoint_path)) + 1
+    return ModelCheckpoint('{}{}.h5'.format(checkpoint_path, model_name), monitor='loss', verbose=1, save_best_only=True,\
+                           mode='min', save_weights_only=False)
 
 def loadModel(safe_model_path, model_name):
-    """Loading keras model
-    Loads previous trained model
+    """Loading pretrained keras model
     Input safe_model_path: path to safed model 
-    Input model name: model name of safed model
+    Input model_name: model name of safed model
     Return: pretrained keras model
     """
-    print('loading model to {}{}.h5'.format(safe_model_path, model_name))
+    print('loading model from {}{}.h5'.format(safe_model_path, model_name))
     return tf.keras.models.load_model('{}{}.h5'.format(safe_model_path, model_name))
 
-def defineCNN(input_shape):
-    model = tf.keras.Sequential([
-        tf.keras.layers.Dense(64, activation='elu', input_shape=(input_shape,)),
-        tf.keras.layers.Dropout(0.5),
-        tf.keras.layers.Dense(1024, activation='elu'),
-        tf.keras.layers.Dropout(0.5),
-        tf.keras.layers.Dense(512, activation='elu'),
-        tf.keras.layers.Dropout(0.5),
-        tf.keras.layers.Dense(256, activation='elu'),
-        tf.keras.layers.Dropout(0.5),
-        tf.keras.layers.Dense(128, activation='elu'),
-        tf.keras.layers.Dropout(0.5),
-        tf.keras.layers.Dense(2, activation='softmax')
-    ])
-    return model
-
-def lr_schedule(epoch):
-    """Learning Rate Schedule
-
-    Learning rate is scheduled to be reduced after 80, 120, 160, 180 epochs.
-    Called automatically every epoch as part of callbacks during training.
-
-    # Arguments
-        epoch (int): The number of epochs
-
-    # Returns
-        lr (float32): learning rate
+def defineModel(input_shape, num_classes=7, stockModel=False, resnet50=False, mobilenet=False, randomnet=False):
+    """Define keras model architecture
+    Input input_shape: input shape of training data, shape depends on the model 
+    Input num_classes: number of classes
+    Return: model
     """
-    lr = 1e-3
-    if epoch > 180:
-        lr *= 0.5e-3
-    elif epoch > 160:
-        lr *= 1e-3
-    elif epoch > 120:
-        lr *= 1e-2
-    elif epoch > 80:
-        lr *= 1e-1
-    print('Learning rate: ', lr)
-    return lr
-
-def dataAugmentation(data, resnet=False):
-    if ~resnet:
-        datagen = ImageDataGenerator(
-            featurewise_center=False,  # set input mean to 0 over the dataset
-            samplewise_center=False,  # set each sample mean to 0
-            featurewise_std_normalization=False,  # divide inputs by std of the dataset
-            samplewise_std_normalization=False,  # divide each input by its std
-            zca_whitening=False,  # apply ZCA whitening
-            rotation_range=10,  # randomly rotate images in the range (degrees, 0 to 180)
-            zoom_range = 0.1, # Randomly zoom image 
-            width_shift_range=0.1,  # randomly shift images horizontally (fraction of total width)
-            height_shift_range=0.1,  # randomly shift images vertically (fraction of total height)
-            horizontal_flip=False,  # randomly flip images
-            vertical_flip=False)  # randomly flip images
-    else:
-        datagen = ImageDataGenerator(preprocessing_function = tf.keras.applications.resnet.preprocess_input)
-    data = datagen.fit(data)
-    return data
-
-def plotModelPerformance(model):
-    """Plot Model Performace
-    Plotting loss, validation loss, accuracy and validatoin accuracy over episodes
-    Input: history of model fitting
-
-    """
-    fig = plt.figure(figsize=(10,8))
-    ax0 = plt.subplot2grid((6, 1), (0, 0), rowspan=6)
-    ax0.plot(model.history['loss'], label='loss', color='blue')
-    ax0.plot(model.history['val_loss'], label='val loss', color='black')
-    ax1 = ax0.twinx()
-    ax1.plot(model.history['accuracy'], label= 'accuracy', color='orange')
-    ax1.plot(model.history['val_accuracy'], label= 'accuracy', color='green')
-    # plt.plot(model_validation.history['loss'], label='val_loss')
-    ax0.set_title('model loss and accurcy')
-    ax0.set_ylabel('loss')
-    ax0.set_xlabel('epoch')
-    ax0.set_ylim([0,2])
-    ax1.set_ylim([0,2])
-    lines, labels = ax0.get_legend_handles_labels()
-    lines2, labels2 = ax1.get_legend_handles_labels()
-    ax0.legend(lines + lines2, labels + labels2, loc=1)
-    plt.show()
-
-# model = tf.keras.Sequential([
+    if stockModel:
+        model = tf.keras.Sequential([
+            tf.keras.layers.Dense(64, activation='elu', input_shape=(input_shape,)),
+            tf.keras.layers.Dropout(0.5),
+            tf.keras.layers.Dense(1024, activation='elu'),
+            tf.keras.layers.Dropout(0.5),
+            tf.keras.layers.Dense(512, activation='elu'),
+            tf.keras.layers.Dropout(0.5),
+            tf.keras.layers.Dense(256, activation='elu'),
+            tf.keras.layers.Dropout(0.5),
+            tf.keras.layers.Dense(128, activation='elu'),
+            tf.keras.layers.Dropout(0.5),
+            tf.keras.layers.Dense(2, activation='softmax')
+        ])
+    if resnet50:
+        model = tf.keras.applications.resnet.ResNet50(include_top=True, weights=None, input_tensor=None,\
+                                                      input_shape=input_shape, pooling=None, classes=num_classes)
+        x = model.layers[-6].output
+        x = tf.keras.layers.GlobalAveragePooling2D()(x)
+        x = tf.keras.layers.Dropout(0.25)(x)
+        predictions = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
+        model = tf.keras.models.Model(inputs=model.input, outputs=predictions)
+    if mobilenet:
+        model = tf.keras.applications.mobilenet.MobileNet(input_shape=input_shape, alpha=1.0, depth_multiplier=1, dropout=0.2,\
+                                                       include_top=True, weights=None, input_tensor=None, pooling=None,\
+                                                           classes=num_classes)
+        x = model.layers[-6].output
+        x = tf.keras.layers.Dropout(0.25)(x)
+        predictions = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
+        model = tf.keras.models.Model(inputs=model.input, outputs=predictions)
+    if randomnet:
+        model = tf.keras.Sequential([
+            tf.keras.layers.Conv2D(32, kernel_size=(3, 3),activation='relu',padding = 'Same',input_shape=input_shape),
+            tf.keras.layers.Conv2D(32,kernel_size=(3, 3), activation='relu',padding = 'Same',),
+            tf.keras.layers.MaxPool2D(pool_size = (2, 2)),
+            tf.keras.layers.Dropout(0.25),
+            tf.keras.layers.Conv2D(64, (3, 3), activation='relu',padding = 'Same'),
+            tf.keras.layers.Conv2D(64, (3, 3), activation='relu',padding = 'Same'),
+            tf.keras.layers.MaxPool2D(pool_size=(2, 2)),
+            tf.keras.layers.Dropout(0.40),
+            tf.keras.layers.Flatten(),
+            tf.keras.layers.Dense(128, activation='relu'),
+            tf.keras.layers.Dropout(0.5),
+            tf.keras.layers.Dense(num_classes, activation='softmax')
+        ])
+    # model = tf.keras.Sequential([
 #     tf.keras.layers.LSTM(500, input_shape=(X_train.shape[1], X_train.shape[2]), batch_size = batch_size, dropout=0.2, recurrent_dropout=0.1, return_sequences=True),
 #     tf.keras.layers.Dense(2, activation='softmax')
 # ])
@@ -251,6 +235,103 @@ def plotModelPerformance(model):
 # ])
 
 
+    
+    return model
+
+def top_3_accuracy(y_true, y_pred):
+    return top_k_categorical_accuracy(y_true, y_pred, k=3)
+
+def top_2_accuracy(y_true, y_pred):
+    return top_k_categorical_accuracy(y_true, y_pred, k=2)
+
+def lr_schedule(epoch, initial_lr=1e-4):
+    """Learning Rate Schedule
+    Learning rate is scheduled to be reduced after 80, 120, 160, 180 epochs.
+    Called automatically every epoch as part of callbacks during training.
+    input epoch: number of epochs
+    return lr: learning rate
+    """
+    lr = initial_lr
+    if epoch > 180:
+        lr *= 0.5e-3
+    elif epoch > 160:
+        lr *= 1e-3
+    elif epoch > 120:
+        lr *= 1e-2
+    elif epoch > 80:
+        lr *= 1e-1
+    print('Learning rate: ', lr)
+    return lr
+
+def dataAugmentation(data, resnet=False, mobilenet=False):
+    if ~resnet:
+        datagen = ImageDataGenerator(
+            featurewise_center=False,  # set input mean to 0 over the dataset
+            samplewise_center=False,  # set each sample mean to 0
+            featurewise_std_normalization=False,  # divide inputs by std of the dataset
+            samplewise_std_normalization=False,  # divide each input by its std
+            zca_whitening=False,  # apply ZCA whitening
+            rotation_range=10,  # randomly rotate images in the range (degrees, 0 to 180)
+            zoom_range = 0.1, # Randomly zoom image 
+            width_shift_range=0.1,  # randomly shift images horizontally (fraction of total width)
+            height_shift_range=0.1,  # randomly shift images vertically (fraction of total height)
+            horizontal_flip=False,  # randomly flip images
+            vertical_flip=False)  # randomly flip images
+    if resnet:
+        datagen = ImageDataGenerator(preprocessing_function = tf.keras.applications.resnet.preprocess_input)
+    if mobilenet:
+        datagen = ImageDataGenerator(preprocessing_function = tf.keras.applications.mobilenet.preprocess_input)
+    data = datagen.fit(data)
+    return data
+
+def defineCallbacks(checkpoint_path, schedule=False, stopping=False, plateau=False, checkpoint=False):
+    """Plot Model Performace
+    input checkpoint_path: path where checkpoints shall be safed
+    input schedule: boolean if a learning rate scheduler shall be used while fitting
+    input stopping: boolean if learning shall be stopped if there is no improvement detected
+    input plateau: boolean if learning rate shall be reduced if learning hits a plateau
+    input checkpoint: boolean if checkpoints shall be safed
+    return callbacks: list of callbacks
+    """   
+    schedule = LearningRateScheduler(lr_schedule)
+    stopping = EarlyStopping(monitor='val_loss', min_delta=1e-4, patience=10, verbose=0, mode='auto', baseline=None, \
+                             restore_best_weights=False)
+    learning_rate_plateau = ReduceLROnPlateau(monitor='val_top_3_accuracy', factor=0.1, patience=5,verbose=0, mode='auto', \
+                                              min_delta=0.0001, cooldown=0, min_lr=0.00001)
+    checkpoint = checkpointModel(checkpoint_path)
+    callbacks = []
+    if schedule:
+        callbacks.append(schedule)
+    if plateau:
+        callbacks.append(stopping)
+    if schedule:
+        callbacks.append(learning_rate_plateau)
+    if checkpoint:
+        callbacks.append(checkpoint)   
+    return callbacks
+
+def plotModelPerformance(model):
+    """Plot Model Performace
+    Plotting loss, validation loss, accuracy and validatoin accuracy over episodes
+    Input: history of model fitting
+    """
+    fig = plt.figure(figsize=(10,8))
+    ax0 = plt.subplot2grid((6, 1), (0, 0), rowspan=6)
+    ax0.plot(model.history['loss'], label='loss', color='blue')
+    ax0.plot(model.history['val_loss'], label='val loss', color='black')
+    ax1 = ax0.twinx()
+    ax1.plot(model.history['accuracy'], label= 'accuracy', color='orange')
+    ax1.plot(model.history['val_accuracy'], label= 'val accuracy', color='green')
+    # plt.plot(model_validation.history['loss'], label='val_loss')
+    ax0.set_title('model loss and accurcy')
+    ax0.set_ylabel('loss')
+    ax0.set_xlabel('epoch')
+    ax0.set_ylim([0,2])
+    ax1.set_ylim([0,2])
+    lines, labels = ax0.get_legend_handles_labels()
+    lines2, labels2 = ax1.get_legend_handles_labels()
+    ax0.legend(lines + lines2, labels + labels2, loc=1)
+    plt.show()
 
 # # copy weights
 # old_weights = model.get_weights()

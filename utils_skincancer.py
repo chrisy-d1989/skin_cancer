@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Apr 27 10:37:15 2020
 
-@author: CDOERR1
+modul: utils for skin cancer py
+modul author: Christoph Doerr
+
 """
 
 import numpy as np
@@ -35,6 +36,7 @@ def identify_val_rows(x, metadata_val):
         return 'train'
     
 def copyImagetoLabelFolder(metadata, metadata_train, metadata_val, figure_path, train_dir, val_dir):
+    print('Copying images ...')
     train_list = list(metadata_train['image_id'])
     val_list = list(metadata_val['image_id'])
     metadata.set_index('image_id', inplace=True)
@@ -50,8 +52,10 @@ def copyImagetoLabelFolder(metadata, metadata_train, metadata_val, figure_path, 
         src = '{}{}'.format(figure_path, fname)
         dst = '{}{}/{}'.format(val_dir, label, fname)
         shutil.copyfile(src, dst)
+    print('... done copyint images !!!')
 
 def dataAugmentation(class_list, data_path, train_dir, total_number_images=6000, target_size=(224,224), batch_size=50):
+    print('Augmenting images ...')
     for img_class in class_list:
         print('Creating data for {} label'.format(img_class))
         aug_dir = '{}aug_dir/{}'.format(data_path, img_class)
@@ -82,7 +86,8 @@ def dataAugmentation(class_list, data_path, train_dir, total_number_images=6000,
         for i in range(0,num_batches):
             imgs, labels = next(aug_datagen)    
         shutil.rmtree(aug_dir) 
-        
+    print('... done augmenting images !!!')
+
 def checkDataVolume(path):
     print(len(os.listdir('{}nv'.format(path))))
     print(len(os.listdir('{}mel'.format(path))))

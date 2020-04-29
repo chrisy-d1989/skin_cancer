@@ -19,15 +19,18 @@ from sklearn.model_selection import train_test_split
 from sklearn.impute import SimpleImputer
 import matplotlib.pyplot as plt
 import tensorflow as tf
-import keras
-from keras import utils as np_utils
-from keras.preprocessing import image
-from keras.preprocessing.image import ImageDataGenerator
-from keras.models import Sequential 
-from keras.layers import Conv2D, MaxPooling2D 
-from keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPool2D
-from keras import backend as K 
-from keras.callbacks import ModelCheckpoint
+import tensorflow.keras
+from tensorflow.keras import utils as np_utils
+from tensorflow.keras.preprocessing import image
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Sequential 
+from tensorflow.keras.layers import Conv2D, MaxPooling2D 
+from tensorflow.keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPool2D
+from tensorflow.keras import backend as K 
+from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler, EarlyStopping
+from tensorflow.keras.models import Model
+from tensorflow.keras.metrics import categorical_crossentropy
+from tensorflow.keras.metrics import categorical_accuracy, top_k_categorical_accuracy
 from PIL import Image
 import os
 from glob import glob
@@ -89,44 +92,56 @@ metadata['train_or_val'] = metadata['image_id']
 metadata['train_or_val'] = metadata['train_or_val'].apply(utils.identify_val_rows, metadata_val=metadata_val['image_id'])
 metadata_train = metadata[metadata['train_or_val'] == 'train']
 
-# print('Copying images ...')
-# utils.copyImagetoLabelFolder(metadata, metadata_train, metadata_val, figure_path, train_dir, val_dir)
-# print('... done copyint images !!!')
-# print('Augmenting images ...')
-# utils.dataAugmentation([*lesion_type_dict], data_path, train_dir)
-# print('... done augmenting images !!!')
-
 batch_size = 10
 image_size=224
-number_epochs = 10 
+number_epochs = 1 
 num_train_samples = len(metadata_train)
 num_val_samples = len(metadata_val)
 input_shape = (image_size, image_size, 3) 
 train_steps = np.ceil(num_train_samples / batch_size)
 val_steps = np.ceil(num_val_samples / batch_size)
 datagen = ImageDataGenerator(preprocessing_function=tf.keras.applications.mobilenet.preprocess_input)
-
+# utils.copyImagetoLabelFolder(metadata, metadata_train, metadata_val, figure_path, train_dir, val_dir)
+# utils.dataAugmentation([*lesion_type_dict], data_path, train_dir, total_number_images=10000, target_size=(224,224),\
+#     batch_size=50)
+ 
 train_batches = datagen.flow_from_directory(train_dir,target_size=(image_size,image_size),batch_size=batch_size)
 valid_batches = datagen.flow_from_directory(val_dir,target_size=(image_size,image_size),batch_size=batch_size)
 test_batches = datagen.flow_from_directory(val_dir, target_size=(image_size,image_size), batch_size=1, shuffle=False)
 
-model = keras.applications.resnet.ResNet50(include_top=True, weights=None, input_tensor=None, input_shape=input_shape, pooling=None, classes=7)
-schedule = tf.keras.callbacks.LearningRateScheduler(model_utils.lr_schedule)
+# model = keras.applications.resnet.ResNet50(include_top=True, weights=None, input_tensor=None, input_shape=input_shape, pooling=None, classes=7)
+model = model_utils.defineModel(input_shape, num_classes=7, mobilenet=True)
 
-checkpoint = ModelCheckpoint('{}model.h5'.format(checkpoint_path), monitor='loss', verbose=1, save_best_only=True, mode='min')
-callbacks_list = [schedule, checkpoint]
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+x = model.layers[-6].output
+# x = tf.keras.layers.GlobalAveragePooling2D()(x)
+x = Dropout(0.25)(x)
+predictions = tf.keras.layers.Dense(7, activation='softmax')(x)
+model = Model(inputs=model.input, outputs=predictions)
+for layer in model.layers[:-25]:
+    layer.trainable = False
+
+callbacks_list = model_utils.defineCallbacks(checkpoint_path, schedule=True, stopping=True, plateau=True, checkpoint=True)
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=[categorical_accuracy, model_utils.top_2_accuracy,\
+                                                                           model_utils.top_3_accuracy])
 print('Fitting model ...')
 history = model.fit_generator(train_batches, steps_per_epoch=train_steps, validation_data=valid_batches,
-                              validation_steps=val_steps, epochs=30, verbose=1, callbacks=callbacks_list)
-# history = model.fit_generator(datagen.flow(x_train, y_train, batch_size=batch_size), epochs=number_epochs, callbacks=callbacks_list, validation_data = (x_test, y_test))
-# new_model.fit(x_train, y_train, epochs=5, batch_size=50, callbacks=callbacks_list)
-# model_utils.safeModel(model, safe_model_path, number_epochs, batch_size)
-# model_utils.plotModelPerformance(history)
+                                validation_steps=val_steps, epochs=number_epochs, initial_epoch=0, verbose=1, \
+                                    callbacks=callbacks_list)
+# history = model.fit_generator(datagen.flow(x_train, y_train, batch_size=batch_size), epochs=number_epochs,\
+#                               callbacks=callbacks_list, validation_data = (x_test, y_test))
+model_utils.safeModel(model, safe_model_path, number_epochs, batch_size, history)
+# model = tf.keras.models.load_model('{}{}.h5'.format(safe_model_path, 'mobilnet_75_10'), \
+#                                    custom_objects={'categorical_accuracy': categorical_accuracy,\
+#                                                    'top_2_accuracy':  model_utils.top_2_accuracy,\
+#                                                    'top_3_accuracy':  model_utils.top_3_accuracy})
 
-# checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, save_best_only=True, mode='min')
-# callbacks_list = [checkpoint]
-# new_model.fit(x_train, y_train, epochs=5, batch_size=50, callbacks=callbacks_list)
+# val_loss, val_cat_acc, val_top_2_acc, val_top_3_acc = model.evaluate(test_batches, steps=num_val_samples)
+# print('val_loss:', val_loss)
+# print('val_cat_acc:', val_cat_acc)
+# print('val_top_2_acc:', val_top_2_acc)
+# print('val_top_3_acc:', val_top_3_acc)
+# make a prediction
+# predictions = model.predict_generator(test_batches, steps=num_val_samples, verbose=1)
 
 # image_list = os.listdir(figure_path)
 # images = np.zeros((1,4))
