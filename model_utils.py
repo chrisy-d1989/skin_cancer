@@ -18,16 +18,36 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.metrics import categorical_accuracy, top_k_categorical_accuracy
 
 
-def trainModel(model, X_train, Y_train, X_test, Y_test, batch_size=32, number_epochs=51, validation_split = 0.2, loss = 'sparse_categorical_crossentropy'):
+def trainModel(model, X_train, Y_train, X_test, Y_test, batch_size=32, number_epochs=51, validation_split = 0.2,\
+               loss = 'sparse_categorical_crossentropy'):
+    """ Train Model
+    Input model: defined model
+    Input X_train: training data
+    Input Y_train: training labels
+    Input X_train: test data
+    Input Y_train: test labels
+    Return model: trained model
+    Return history: training history
+    """
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.00001, beta_1=0.9, beta_2=0.999, amsgrad=False)
-    lrate = LearningRateScheduler(step_decay)
+    lrate = LearningRateScheduler(lr_schedule)
     callbacks_list = [lrate]
     model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
     history = model.fit(X_train, Y_train, epochs=number_epochs, batch_size=batch_size, callbacks=callbacks_list, validation_data = (X_test, Y_test))
     # model.evaluate(X_test, Y_test)
     return (model, history)
 
-def trainLSTMModel(model, X_train, Y_train, X_test, Y_test, batch_size, number_epochs=51, validation_split = 0.2, loss = 'sparse_categorical_crossentropy'):
+def trainLSTMModel(model, X_train, Y_train, X_test, Y_test, batch_size, number_epochs=51, validation_split = 0.2,\
+                   loss = 'sparse_categorical_crossentropy'):
+    """ Train LSTM Model
+    Input model: defined model
+    Input X_train: training data
+    Input Y_train: training labels
+    Input X_train: test data
+    Input Y_train: test labels
+    Return model: trained model
+    Return history: training history
+    """
     # model.compile(optimizer='adam', loss=loss, metrics=['accuracy'],)
     model.compile(loss=loss, optimizer='adam', metrics=['accuracy'])
     history = model.fit(X_train, Y_train, epochs=number_epochs, batch_size = batch_size)
@@ -35,6 +55,14 @@ def trainLSTMModel(model, X_train, Y_train, X_test, Y_test, batch_size, number_e
     return (model, history)
 
 def splitData(stock, start_idx, end_idx, forcast_idx, ratio= 0.75):
+    """ Split data set into train, test and predict data sets
+    Input stock: pandas data series
+    Input start_idx: index of the start date
+    Input end_idx: index of the end date
+    Input forcast_idx: index of the forcasted date
+    Input ratio: ratio of train and test data, default value is 0.75
+    return stock_std: train, test and predict data set
+    """
     data_points = end_idx - start_idx
     data_points_train = int(data_points * ratio)
     train_data = stock.iloc[start_idx:(start_idx + data_points_train)].reset_index()
@@ -43,12 +71,9 @@ def splitData(stock, start_idx, end_idx, forcast_idx, ratio= 0.75):
     return (train_data, test_data, predict_data)
 
 def getXY(train_data, test_data, predict_data):
-    """Saving keras model
-    Safes previous trained model
-    Input safe_model_path: path to safe model 
-    Input number_epochs: number of epochs model was trained with
-    Input batch_size: batch size model was trained with
-    Input model_name: defined model name(string), default value is none and a number is chosen
+    """ Split data set into labels and train data
+    Input stock: pandas data series
+    return stock_std: train, test and predict data set, train, test, predict labels
     """
     #toDo: use regex filter
     X_train = train_data.drop(['index', 'Date','daily_label', 'future_close'], axis = 1).to_numpy(dtype='float32')
@@ -60,6 +85,11 @@ def getXY(train_data, test_data, predict_data):
     return (X_train, Y_train, X_test, Y_test, X_predict, Y_predict)
 
 def prepareDataforLTSM(data, sample_length = 300, Y_data = False):
+    """ Prepare Data for LSTM Model training
+    Input data:
+    Return samples:
+    Return number_samples:
+    """
     number_samples = int(len(data)/sample_length)
     if number_samples == 0:
         print("Dataset to small for batch size")
@@ -78,6 +108,10 @@ def prepareDataforLTSM(data, sample_length = 300, Y_data = False):
     return (samples, number_samples)
 
 def standardizeIndicators(stock):
+    """ Standardize dataset of indicators
+    Input stock: pandas data series
+    return stock_std: standardized pandas series
+    """
     stock_std = stock.copy()
     for key, value in stock_std.iteritems():
         if key == 'Date' or 'index':
@@ -94,6 +128,10 @@ def standardizeIndicators(stock):
     return (stock_std)
 
 def normalizeIndicators(stock):
+    """ Normalize dataset of indicators
+    Input stock: pandas data series
+    return stock_std: normalized pandas series
+    """
     stock_std = stock.copy()
     for key, value in stock_std.iteritems():
         if key == 'Date' or key == 'index':
@@ -129,16 +167,6 @@ def safeModel(model, safe_model_path, number_epochs, batch_size, history, model_
     with open(hist_csv_file, mode='w') as f:
         hist_df.to_csv(f)
         
-def checkpointModel(checkpoint_path, model_name=None):
-    """Saving keras model checkpoints while fitting
-    Input checkpoint_path: path to checkpoints 
-    Return : safing checkpoint
-    """
-    if model_name == None:
-        model_name = len(os.listdir(checkpoint_path)) + 1
-    return ModelCheckpoint('{}{}.h5'.format(checkpoint_path, model_name), monitor='loss', verbose=1, save_best_only=True,\
-                           mode='min', save_weights_only=False)
-
 def loadModel(safe_model_path, model_name):
     """Loading pretrained keras model
     Input safe_model_path: path to safed model 
@@ -148,13 +176,21 @@ def loadModel(safe_model_path, model_name):
     print('loading model from {}{}.h5'.format(safe_model_path, model_name))
     return tf.keras.models.load_model('{}{}.h5'.format(safe_model_path, model_name))
 
-def defineModel(input_shape, num_classes=7, stockModel=False, resnet50=False, mobilenet=False, randomnet=False):
+def defineModel(input_shape, X_train=None, num_classes=7, batch_size=None, stockModel1=False, stockModelLSTM1=False, \
+                stockModelLSTM2=False, resnet50=False, mobilenet=False, randomnet=False):
     """Define keras model architecture
     Input input_shape: input shape of training data, shape depends on the model 
     Input num_classes: number of classes
+    Input batch_size: batch size of training
+    Input stockModel1: Boolean, True if you want to use stockModel1
+    Input stockModelLSTM1: Boolean, True if you want to use stockModelLSTM1
+    Input stockModelLSTM2: Boolean, True if you want to use stockModelLSTM2
+    Input resnet50: Boolean, True if you want to use resnet50
+    Input mobilenet: Boolean, True if you want to use mobilenet
+    Input randomnet: Boolean, True if you want to use randomnet
     Return: model
     """
-    if stockModel:
+    if stockModel1:
         model = tf.keras.Sequential([
             tf.keras.layers.Dense(64, activation='elu', input_shape=(input_shape,)),
             tf.keras.layers.Dropout(0.5),
@@ -168,22 +204,51 @@ def defineModel(input_shape, num_classes=7, stockModel=False, resnet50=False, mo
             tf.keras.layers.Dropout(0.5),
             tf.keras.layers.Dense(2, activation='softmax')
         ])
+        
+    if stockModelLSTM1: 
+        model = tf.keras.Sequential([
+            tf.keras.layers.LSTM(500, input_shape=(X_train.shape[1], X_train.shape[2]), batch_size = batch_size,\
+                                 dropout=0.2, recurrent_dropout=0.1, return_sequences=True),
+            tf.keras.layers.Dense(2, activation='sigmoid')
+        ])
+        
+    if stockModelLSTM2:
+        model = tf.keras.Sequential([
+            tf.keras.layers.LSTM(64, input_shape=(X_train.shape[1], X_train.shape[2]), stateful=True, batch_size = batch_size,\
+                                 dropout=0.2, recurrent_dropout=0.1, return_sequences=True),
+            tf.keras.layers.Dropout(0.5),
+            tf.keras.layers.LSTM(1028, dropout=0.2, stateful=True, recurrent_dropout=0.1, return_sequences=True),
+            tf.keras.layers.Dropout(0.5),
+            tf.keras.layers.LSTM(512, dropout=0.2, stateful=True, recurrent_dropout=0.1, return_sequences=True),
+            tf.keras.layers.Dropout(0.5),
+            tf.keras.layers.LSTM(256, dropout=0.2, stateful=True, recurrent_dropout=0.1, return_sequences=True),
+            tf.keras.layers.Dropout(0.5),
+            tf.keras.layers.LSTM(128, dropout=0.2, stateful=True, recurrent_dropout=0.1, return_sequences=True),
+            tf.keras.layers.Dropout(0.5),
+            tf.keras.layers.LSTM(64, dropout=0.2, stateful=True, recurrent_dropout=0.1, return_sequences=True),
+            tf.keras.layers.Dense(2,activation='sigmoid')
+        ])
+
     if resnet50:
         model = tf.keras.applications.resnet.ResNet50(include_top=True, weights=None, input_tensor=None,\
                                                       input_shape=input_shape, pooling=None, classes=num_classes)
         x = model.layers[-6].output
         x = tf.keras.layers.GlobalAveragePooling2D()(x)
         x = tf.keras.layers.Dropout(0.25)(x)
+        x = tf.keras.layers.BatchNormalization()(x)
         predictions = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
         model = tf.keras.models.Model(inputs=model.input, outputs=predictions)
+
     if mobilenet:
         model = tf.keras.applications.mobilenet.MobileNet(input_shape=input_shape, alpha=1.0, depth_multiplier=1, dropout=0.2,\
                                                        include_top=True, weights=None, input_tensor=None, pooling=None,\
                                                            classes=num_classes)
         x = model.layers[-6].output
         x = tf.keras.layers.Dropout(0.25)(x)
+        x = tf.keras.layers.BatchNormalization()(x)
         predictions = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
         model = tf.keras.models.Model(inputs=model.input, outputs=predictions)
+    
     if randomnet:
         model = tf.keras.Sequential([
             tf.keras.layers.Conv2D(32, kernel_size=(3, 3),activation='relu',padding = 'Same',input_shape=input_shape),
@@ -199,25 +264,6 @@ def defineModel(input_shape, num_classes=7, stockModel=False, resnet50=False, mo
             tf.keras.layers.Dropout(0.5),
             tf.keras.layers.Dense(num_classes, activation='softmax')
         ])
-    # model = tf.keras.Sequential([
-#     tf.keras.layers.LSTM(500, input_shape=(X_train.shape[1], X_train.shape[2]), batch_size = batch_size, dropout=0.2, recurrent_dropout=0.1, return_sequences=True),
-#     tf.keras.layers.Dense(2, activation='softmax')
-# ])
-
-# model = tf.keras.Sequential([
-#     tf.keras.layers.LSTM(64, input_shape=(X_train.shape[1], X_train.shape[2]), stateful=True, batch_size = batch_size, dropout=0.2, recurrent_dropout=0.1, return_sequences=True),
-#     tf.keras.layers.Dropout(0.5),
-#     tf.keras.layers.LSTM(1028, dropout=0.2, stateful=True, recurrent_dropout=0.1, return_sequences=True),
-#     tf.keras.layers.Dropout(0.5),
-#     tf.keras.layers.LSTM(512, dropout=0.2, stateful=True, recurrent_dropout=0.1, return_sequences=True),
-#     tf.keras.layers.Dropout(0.5),
-#     tf.keras.layers.LSTM(256, dropout=0.2, stateful=True, recurrent_dropout=0.1, return_sequences=True),
-#     tf.keras.layers.Dropout(0.5),
-#     tf.keras.layers.LSTM(128, dropout=0.2, stateful=True, recurrent_dropout=0.1, return_sequences=True),
-#     tf.keras.layers.Dropout(0.5),
-#     tf.keras.layers.LSTM(64, dropout=0.2, stateful=True, recurrent_dropout=0.1, return_sequences=True),
-#     tf.keras.layers.Dense(2,activation='softmax')
-# ])
 
 # predict_model = tf.keras.Sequential([
 #     tf.keras.layers.LSTM(64, input_shape=(X_predict.shape[1], X_predict.shape[2]), batch_size = batch_size_predict, dropout=0.2, recurrent_dropout=0.1, return_sequences=True),
@@ -232,26 +278,53 @@ def defineModel(input_shape, num_classes=7, stockModel=False, resnet50=False, mo
 #     tf.keras.layers.Dropout(0.5),
 #     tf.keras.layers.LSTM(64, dropout=0.2, stateful=True, recurrent_dropout=0.1, return_sequences=True),
 #     tf.keras.layers.Dense(2,activation='softmax')
-# ])
-
-
-    
+# ]) 
     return model
 
 def top_3_accuracy(y_true, y_pred):
+    """Calculate Top3 Accuracy
+    return: top3 accuracy
+    """
     return top_k_categorical_accuracy(y_true, y_pred, k=3)
 
 def top_2_accuracy(y_true, y_pred):
+    """Calculate Top2 Accuracy
+    return: Top2 accuracy
+    """
     return top_k_categorical_accuracy(y_true, y_pred, k=2)
 
-def lr_schedule(epoch, initial_lr=1e-4):
+
+
+def preprocessingData(resnet=False, mobilenet=False):
+    """Preprocessing Data for model training
+    Input resnet: boolean, if you want to preprocess for resnet model
+    Input mobilenet: boolean, if you want to preprocess for mobilenet model
+    Return datagen: data generator
+    """
+    if resnet:
+        datagen = ImageDataGenerator(preprocessing_function = tf.keras.applications.resnet.preprocess_input)
+    if mobilenet:
+        datagen = ImageDataGenerator(preprocessing_function = tf.keras.applications.mobilenet.preprocess_input)
+    return datagen
+
+def checkpointModel(checkpoint_path, model_name=None):
+    """Saving keras model checkpoints while fitting
+    Input checkpoint_path: path to checkpoints 
+    Return : safing checkpoint
+    """
+    if model_name == None:
+        model_name = len(os.listdir(checkpoint_path)) + 1
+    return ModelCheckpoint('{}{}.h5'.format(checkpoint_path, model_name), monitor='categorical_accuracy', verbose=1,\
+                           save_best_only=True, mode='min', save_weights_only=False)
+
+def lr_schedule(epoch):
     """Learning Rate Schedule
     Learning rate is scheduled to be reduced after 80, 120, 160, 180 epochs.
     Called automatically every epoch as part of callbacks during training.
     input epoch: number of epochs
     return lr: learning rate
     """
-    lr = initial_lr
+    lr = 1e-4
     if epoch > 180:
         lr *= 0.5e-3
     elif epoch > 160:
@@ -263,28 +336,7 @@ def lr_schedule(epoch, initial_lr=1e-4):
     print('Learning rate: ', lr)
     return lr
 
-def dataAugmentation(data, resnet=False, mobilenet=False):
-    if ~resnet:
-        datagen = ImageDataGenerator(
-            featurewise_center=False,  # set input mean to 0 over the dataset
-            samplewise_center=False,  # set each sample mean to 0
-            featurewise_std_normalization=False,  # divide inputs by std of the dataset
-            samplewise_std_normalization=False,  # divide each input by its std
-            zca_whitening=False,  # apply ZCA whitening
-            rotation_range=10,  # randomly rotate images in the range (degrees, 0 to 180)
-            zoom_range = 0.1, # Randomly zoom image 
-            width_shift_range=0.1,  # randomly shift images horizontally (fraction of total width)
-            height_shift_range=0.1,  # randomly shift images vertically (fraction of total height)
-            horizontal_flip=False,  # randomly flip images
-            vertical_flip=False)  # randomly flip images
-    if resnet:
-        datagen = ImageDataGenerator(preprocessing_function = tf.keras.applications.resnet.preprocess_input)
-    if mobilenet:
-        datagen = ImageDataGenerator(preprocessing_function = tf.keras.applications.mobilenet.preprocess_input)
-    data = datagen.fit(data)
-    return data
-
-def defineCallbacks(checkpoint_path, schedule=False, stopping=False, plateau=False, checkpoint=False):
+def defineCallbacks(checkpoint_path, epoch, schedule=False, stopping=False, plateau=False, checkpoint=False):
     """Plot Model Performace
     input checkpoint_path: path where checkpoints shall be safed
     input schedule: boolean if a learning rate scheduler shall be used while fitting
@@ -294,10 +346,10 @@ def defineCallbacks(checkpoint_path, schedule=False, stopping=False, plateau=Fal
     return callbacks: list of callbacks
     """   
     schedule = LearningRateScheduler(lr_schedule)
-    stopping = EarlyStopping(monitor='val_loss', min_delta=1e-4, patience=10, verbose=0, mode='auto', baseline=None, \
-                             restore_best_weights=False)
-    learning_rate_plateau = ReduceLROnPlateau(monitor='val_top_3_accuracy', factor=0.1, patience=5,verbose=0, mode='auto', \
-                                              min_delta=0.0001, cooldown=0, min_lr=0.00001)
+    stopping = EarlyStopping(monitor='categorical_accuracy', min_delta=1e-4, patience=10, verbose=0, mode='auto', baseline=None, \
+                             restore_best_weights=True)
+    learning_rate_plateau = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5,verbose=0, mode='auto', \
+                                              min_delta=0.0001, min_lr=1e-6)
     checkpoint = checkpointModel(checkpoint_path)
     callbacks = []
     if schedule:
@@ -317,21 +369,41 @@ def plotModelPerformance(model):
     """
     fig = plt.figure(figsize=(10,8))
     ax0 = plt.subplot2grid((6, 1), (0, 0), rowspan=6)
-    ax0.plot(model.history['loss'], label='loss', color='blue')
-    ax0.plot(model.history['val_loss'], label='val loss', color='black')
+    ax0.plot(model['loss'], label='loss', color='blue')
+    ax0.plot(model['val_loss'], label='val loss', color='black')
     ax1 = ax0.twinx()
-    ax1.plot(model.history['accuracy'], label= 'accuracy', color='orange')
-    ax1.plot(model.history['val_accuracy'], label= 'val accuracy', color='green')
-    # plt.plot(model_validation.history['loss'], label='val_loss')
+    ax1.plot(model['categorical_accuracy'], label= 'categorical_accuracy', color='orange')
+    ax1.plot(model['val_categorical_accuracy'], label= 'val_categorical_accuracy accuracy', color='green')
     ax0.set_title('model loss and accurcy')
     ax0.set_ylabel('loss')
     ax0.set_xlabel('epoch')
-    ax0.set_ylim([0,2])
-    ax1.set_ylim([0,2])
+    # ax0.set_ylim([0,2])
+    # ax1.set_ylim([0,2])
     lines, labels = ax0.get_legend_handles_labels()
     lines2, labels2 = ax1.get_legend_handles_labels()
     ax0.legend(lines + lines2, labels + labels2, loc=1)
     plt.show()
+
+def plotHistogramm(data, valid_batches):
+    """Plot Prediction Histogramm
+    Plotting probabilites of predicted classes
+    Input: np array of predicted data
+    Input valid_batches: dictonary of validation batches wit class names
+    """
+    labels = [*valid_batches.class_indices]
+    x = np.arange(len(labels))  # the label locations
+    width = 0.3  # the width of the bars
+    fig, ax = plt.subplots(1,1, figsize=(12,3))
+    # for i in range(3):
+    #     ax.bar(x + i*width, data[i], width, label=i)
+    ax.bar(x, data[2], width, label=0, color='green')
+    ax.bar(x + width, data[309], width, label=1, color='blue')
+    ax.bar(x + 2*width, data[1678], width, label=2, color='red')
+    ax.set_ylabel('Scores')
+    ax.set_title('Scores by picture')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.legend()
 
 # # copy weights
 # old_weights = model.get_weights()
