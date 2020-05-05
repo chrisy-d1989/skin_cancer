@@ -7,10 +7,6 @@ modul author: Christoph Doerr
 """
 
 import numpy as np
-import pandas as pd
-from datetime import datetime, date, timedelta
-from sklearn import preprocessing
-import matplotlib.pyplot as plt
 import shutil
 import os.path
 import os

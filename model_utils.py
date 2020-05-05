@@ -10,12 +10,10 @@ import numpy as np
 from sklearn import preprocessing
 import os
 import tensorflow as tf
-from tensorflow.keras import utils as np_utils
 import matplotlib.pyplot as plt
-import math
 from tensorflow.keras.callbacks import LearningRateScheduler, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.metrics import categorical_accuracy, top_k_categorical_accuracy
+from tensorflow.keras.metrics import top_k_categorical_accuracy
 
 
 def trainModel(model, X_train, Y_train, X_test, Y_test, batch_size=32, number_epochs=51, validation_split = 0.2,\
@@ -149,7 +147,7 @@ def normalizeIndicators(stock):
             #         print("Watch out, Normalization out of bounds")
     return (stock_std)
 
-def safeModel(model, safe_model_path, number_epochs, batch_size, history, model_name=None):
+def safeModel(model, safe_model_path, batch_size, history, model_name=None):
     """Saving keras model
     Safes previous trained model and training history
     Input safe_model_path: path to safe model 
@@ -158,12 +156,13 @@ def safeModel(model, safe_model_path, number_epochs, batch_size, history, model_
     Input history: training history
     Input model_name: defined model name(string), default value is none and a number is chosen
     """
+    number_epochs = len(history.history['loss'])
     if model_name == None:
         model_name = len(os.listdir(safe_model_path)) + 1
-    model.save('{}{}_{}_{}.h5'.format(safe_model_path, model_name, number_epochs, batch_size))
-    print('safed model to {}{}_{}_{}.h5'.format(safe_model_path, model_name, number_epochs, batch_size))
+    model.save('{}{}_epochs{}_batch{}.h5'.format(safe_model_path, model_name, number_epochs, batch_size))
+    print('safed model to {}{}_epochs{}_batch{}.h5'.format(safe_model_path, model_name, number_epochs, batch_size))
     hist_df = pd.DataFrame(history.history)
-    hist_csv_file = '{}{}_{}_{}_history.csv'.format(safe_model_path, model_name, number_epochs, batch_size)
+    hist_csv_file = '{}{}_epochs{}_batch{}_history.csv'.format(safe_model_path, model_name, number_epochs, batch_size)
     with open(hist_csv_file, mode='w') as f:
         hist_df.to_csv(f)
         
@@ -307,16 +306,6 @@ def preprocessingData(resnet=False, mobilenet=False):
         datagen = ImageDataGenerator(preprocessing_function = tf.keras.applications.mobilenet.preprocess_input)
     return datagen
 
-def checkpointModel(checkpoint_path, model_name=None):
-    """Saving keras model checkpoints while fitting
-    Input checkpoint_path: path to checkpoints 
-    Return : safing checkpoint
-    """
-    if model_name == None:
-        model_name = len(os.listdir(checkpoint_path)) + 1
-    return ModelCheckpoint('{}{}.h5'.format(checkpoint_path, model_name), monitor='categorical_accuracy', verbose=1,\
-                           save_best_only=True, mode='min', save_weights_only=False)
-
 def lr_schedule(epoch):
     """Learning Rate Schedule
     Learning rate is scheduled to be reduced after 80, 120, 160, 180 epochs.
@@ -336,6 +325,16 @@ def lr_schedule(epoch):
     print('Learning rate: ', lr)
     return lr
 
+def checkpointModel(checkpoint_path, model_name=None):
+    """Saving keras model checkpoints while fitting
+    Input checkpoint_path: path to checkpoints 
+    Return : safing checkpoint
+    """
+    if model_name == None:
+        model_name = len(os.listdir(checkpoint_path)) + 1
+    return ModelCheckpoint('{}{}.h5'.format(checkpoint_path, model_name), monitor='categorical_accuracy', verbose=1,\
+                           save_best_only=True, mode='min', save_weights_only=False)
+
 def defineCallbacks(checkpoint_path, epoch, schedule=False, stopping=False, plateau=False, checkpoint=False):
     """Plot Model Performace
     input checkpoint_path: path where checkpoints shall be safed
@@ -348,7 +347,7 @@ def defineCallbacks(checkpoint_path, epoch, schedule=False, stopping=False, plat
     schedule = LearningRateScheduler(lr_schedule)
     stopping = EarlyStopping(monitor='categorical_accuracy', min_delta=1e-4, patience=10, verbose=0, mode='auto', baseline=None, \
                              restore_best_weights=True)
-    learning_rate_plateau = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5,verbose=0, mode='auto', \
+    learning_rate_plateau = ReduceLROnPlateau(monitor='categorical_accuracy', factor=0.1, patience=5,verbose=0, mode='auto', \
                                               min_delta=0.0001, min_lr=1e-6)
     checkpoint = checkpointModel(checkpoint_path)
     callbacks = []
